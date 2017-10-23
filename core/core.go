@@ -26,6 +26,7 @@ import (
 	exchange "github.com/ipfs/go-ipfs/exchange"
 	bitswap "github.com/ipfs/go-ipfs/exchange/bitswap"
 	bsnet "github.com/ipfs/go-ipfs/exchange/bitswap/network"
+	provider "github.com/ipfs/go-ipfs/exchange/provider"
 	rp "github.com/ipfs/go-ipfs/exchange/reprovide"
 	filestore "github.com/ipfs/go-ipfs/filestore"
 	mount "github.com/ipfs/go-ipfs/fuse/mount"
@@ -128,6 +129,7 @@ type IpfsNode struct {
 	PeerHost     p2phost.Host        // the network host (server+client)
 	Bootstrapper io.Closer           // the periodic bootstrapper
 	Routing      routing.IpfsRouting // the routing system. recommend ipfs-dht
+	Provider     provider.Provider   // the content routing abstraction layer
 	Exchange     exchange.Interface  // the block exchange + strategy (bitswap)
 	Namesys      namesys.NameSystem  // the name system, resolves paths to hashes
 	Ping         *ping.PingService
@@ -435,9 +437,12 @@ func (n *IpfsNode) startOnlineServicesWithHost(ctx context.Context, host p2phost
 	// Wrap standard peer host with routing system to allow unknown peer lookups
 	n.PeerHost = rhost.Wrap(host, n.Routing)
 
+	// Wrap content routing with a buffering layer
+	n.Provider = provider.NewProvider(ctx, n.Routing)
+
 	// setup exchange service
 	const alwaysSendToPeer = true // use YesManStrategy
-	bitswapNetwork := bsnet.NewFromIpfsHost(n.PeerHost, n.Routing)
+	bitswapNetwork := bsnet.NewFromIpfsHost(n.PeerHost, n.Routing, n.Provider)
 	n.Exchange = bitswap.New(ctx, n.Identity, bitswapNetwork, n.Blockstore, alwaysSendToPeer)
 
 	size, err := n.getCacheSize()
